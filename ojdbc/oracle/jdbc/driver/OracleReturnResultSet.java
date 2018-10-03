@@ -1,0 +1,2212 @@
+/*      */ package oracle.jdbc.driver;
+/*      */ 
+/*      */ import java.io.InputStream;
+/*      */ import java.io.Reader;
+/*      */ import java.math.BigDecimal;
+/*      */ import java.sql.Array;
+/*      */ import java.sql.Date;
+/*      */ import java.sql.NClob;
+/*      */ import java.sql.ResultSet;
+/*      */ import java.sql.ResultSetMetaData;
+/*      */ import java.sql.SQLException;
+/*      */ import java.sql.SQLXML;
+/*      */ import java.sql.Time;
+/*      */ import java.sql.Timestamp;
+/*      */ import java.util.Calendar;
+/*      */ import java.util.Map;
+/*      */ import oracle.jdbc.OracleDataFactory;
+/*      */ import oracle.jdbc.internal.OracleConnection;
+/*      */ import oracle.sql.BLOB;
+/*      */ import oracle.sql.CLOB;
+/*      */ import oracle.sql.CustomDatumFactory;
+/*      */ import oracle.sql.DATE;
+/*      */ import oracle.sql.Datum;
+/*      */ import oracle.sql.NUMBER;
+/*      */ import oracle.sql.OPAQUE;
+/*      */ import oracle.sql.ORAData;
+/*      */ import oracle.sql.ORADataFactory;
+/*      */ import oracle.sql.TIMESTAMPLTZ;
+/*      */ 
+/*      */ class OracleReturnResultSet extends BaseResultSet
+/*      */ {
+/*      */   OracleStatement statement;
+/*      */   Accessor[] returnAccessors;
+/*      */   
+/*      */   OracleReturnResultSet(OracleStatement paramOracleStatement) throws SQLException
+/*      */   {
+/*   37 */     this.statement = paramOracleStatement;
+/*   38 */     this.closed = false;
+/*      */     
+/*   40 */     this.returnAccessors = new Accessor[paramOracleStatement.numReturnParams];
+/*      */     
+/*   42 */     int i = 0;
+/*   43 */     for (int j = 0; j < paramOracleStatement.numberOfBindPositions; j++)
+/*      */     {
+/*   45 */       Accessor localAccessor = paramOracleStatement.returnParamAccessors[j];
+/*      */       
+/*   47 */       if (localAccessor != null) {
+/*   48 */         this.returnAccessors[(i++)] = localAccessor;
+/*      */       }
+/*      */     }
+/*      */   }
+/*      */   
+/*      */   public boolean next()
+/*      */     throws SQLException
+/*      */   {
+/*   56 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*   59 */       if (this.closed) { return false;
+/*      */       }
+/*   61 */       if (!this.statement.returnParamsFetched)
+/*      */       {
+/*   63 */         this.statement.fetchDmlReturnParams();
+/*   64 */         this.statement.setupReturnParamAccessors();
+/*      */       }
+/*      */       
+/*   67 */       this.statement.currentRow += 1;
+/*   68 */       this.statement.totalRowsVisited += 1;
+/*      */       
+/*   70 */       if (this.statement.currentRow >= this.statement.rowsDmlReturned) {
+/*   71 */         return false;
+/*      */       }
+/*   73 */       return true;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public void close()
+/*      */     throws SQLException
+/*      */   {
+/*   81 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*   84 */       super.close();
+/*      */       
+/*   86 */       this.statement.returnResultSet = null;
+/*   87 */       this.statement.numReturnParams = 0;
+/*   88 */       this.statement.totalRowsVisited = 0;
+/*   89 */       this.statement.currentRow = -1;
+/*   90 */       this.statement.returnParamsFetched = false;
+/*   91 */       this.statement.rowsDmlReturned = 0;
+/*   92 */       this.statement.returnParamBytes = null;
+/*   93 */       this.statement.returnParamChars = null;
+/*   94 */       this.statement.returnParamIndicators = null;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public boolean wasNull()
+/*      */     throws SQLException
+/*      */   {
+/*  102 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException;
+/*  105 */       if (this.closed)
+/*      */       {
+/*  107 */         localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  108 */         localSQLException.fillInStackTrace();
+/*  109 */         throw localSQLException;
+/*      */       }
+/*      */       
+/*  112 */       if ((this.statement.currentRow == -1) || (this.statement.lastIndex == 0))
+/*      */       {
+/*  114 */         localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 24);
+/*  115 */         localSQLException.fillInStackTrace();
+/*  116 */         throw localSQLException;
+/*      */       }
+/*      */       
+/*  119 */       return this.returnAccessors[(this.statement.lastIndex - 1)].isNull(this.statement.currentRow);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public ResultSetMetaData getMetaData()
+/*      */     throws SQLException
+/*      */   {
+/*  127 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*  130 */       if (!this.statement.isAutoGeneratedKey)
+/*      */       {
+/*  132 */         localObject1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/*  133 */         ((SQLException)localObject1).fillInStackTrace();
+/*  134 */         throw ((Throwable)localObject1);
+/*      */       }
+/*      */       
+/*  137 */       if (this.closed)
+/*      */       {
+/*  139 */         localObject1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 10);
+/*  140 */         ((SQLException)localObject1).fillInStackTrace();
+/*  141 */         throw ((Throwable)localObject1);
+/*      */       }
+/*      */       
+/*  144 */       if (this.statement.closed)
+/*      */       {
+/*  146 */         localObject1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 9);
+/*  147 */         ((SQLException)localObject1).fillInStackTrace();
+/*  148 */         throw ((Throwable)localObject1);
+/*      */       }
+/*      */       
+/*  151 */       Object localObject1 = this.statement.autoKeyInfo;
+/*  152 */       ((AutoKeyInfo)localObject1).statement = this.statement;
+/*  153 */       ((AutoKeyInfo)localObject1).connection = this.statement.connection;
+/*  154 */       ((AutoKeyInfo)localObject1).initMetaData(this);
+/*  155 */       return (ResultSetMetaData)localObject1;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */   /* Error */
+/*      */   public java.sql.Statement getStatement()
+/*      */     throws SQLException
+/*      */   {
+/*      */     // Byte code:
+/*      */     //   0: aload_0
+/*      */     //   1: getfield 2	oracle/jdbc/driver/OracleReturnResultSet:statement	Loracle/jdbc/driver/OracleStatement;
+/*      */     //   4: getfield 9	oracle/jdbc/driver/OracleStatement:connection	Loracle/jdbc/driver/PhysicalConnection;
+/*      */     //   7: dup
+/*      */     //   8: astore_1
+/*      */     //   9: monitorenter
+/*      */     //   10: aload_0
+/*      */     //   11: getfield 2	oracle/jdbc/driver/OracleReturnResultSet:statement	Loracle/jdbc/driver/OracleStatement;
+/*      */     //   14: aload_1
+/*      */     //   15: monitorexit
+/*      */     //   16: areturn
+/*      */     //   17: astore_2
+/*      */     //   18: aload_1
+/*      */     //   19: monitorexit
+/*      */     //   20: aload_2
+/*      */     //   21: athrow
+/*      */     // Line number table:
+/*      */     //   Java source line #162	-> byte code offset #0
+/*      */     //   Java source line #165	-> byte code offset #10
+/*      */     //   Java source line #167	-> byte code offset #17
+/*      */     // Local variable table:
+/*      */     //   start	length	slot	name	signature
+/*      */     //   0	22	0	this	OracleReturnResultSet
+/*      */     //   8	11	1	Ljava/lang/Object;	Object
+/*      */     //   17	4	2	localObject1	Object
+/*      */     // Exception table:
+/*      */     //   from	to	target	type
+/*      */     //   10	16	17	finally
+/*      */     //   17	20	17	finally
+/*      */   }
+/*      */   
+/*      */   public String getString(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  177 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  181 */       if (this.closed)
+/*      */       {
+/*  183 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  184 */         localSQLException1.fillInStackTrace();
+/*  185 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  188 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  190 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  191 */         localSQLException1.fillInStackTrace();
+/*  192 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  195 */       int i = this.statement.currentRow;
+/*  196 */       if (i < 0)
+/*      */       {
+/*  198 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  199 */         localSQLException2.fillInStackTrace();
+/*  200 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  203 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  206 */       return this.returnAccessors[(paramInt - 1)].getString(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public boolean getBoolean(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  214 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  218 */       if (this.closed)
+/*      */       {
+/*  220 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  221 */         localSQLException1.fillInStackTrace();
+/*  222 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  225 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  227 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  228 */         localSQLException1.fillInStackTrace();
+/*  229 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  232 */       int i = this.statement.currentRow;
+/*  233 */       if (i < 0)
+/*      */       {
+/*  235 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  236 */         localSQLException2.fillInStackTrace();
+/*  237 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  240 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  243 */       return this.returnAccessors[(paramInt - 1)].getBoolean(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */   public oracle.jdbc.OracleResultSet.AuthorizationIndicator getAuthorizationIndicator(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  250 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  254 */       if (this.closed)
+/*      */       {
+/*  256 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  257 */         localSQLException1.fillInStackTrace();
+/*  258 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  261 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  263 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  264 */         localSQLException1.fillInStackTrace();
+/*  265 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  268 */       int i = this.statement.currentRow;
+/*  269 */       if (i < 0)
+/*      */       {
+/*  271 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  272 */         localSQLException2.fillInStackTrace();
+/*  273 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  276 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  279 */       return this.returnAccessors[(paramInt - 1)].getAuthorizationIndicator(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */   public byte getByte(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  286 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  290 */       if (this.closed)
+/*      */       {
+/*  292 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  293 */         localSQLException1.fillInStackTrace();
+/*  294 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  297 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  299 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  300 */         localSQLException1.fillInStackTrace();
+/*  301 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  304 */       int i = this.statement.currentRow;
+/*  305 */       if (i < 0)
+/*      */       {
+/*  307 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  308 */         localSQLException2.fillInStackTrace();
+/*  309 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  312 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  315 */       return this.returnAccessors[(paramInt - 1)].getByte(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public short getShort(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  323 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  327 */       if (this.closed)
+/*      */       {
+/*  329 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  330 */         localSQLException1.fillInStackTrace();
+/*  331 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  334 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  336 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  337 */         localSQLException1.fillInStackTrace();
+/*  338 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  341 */       int i = this.statement.currentRow;
+/*  342 */       if (i < 0)
+/*      */       {
+/*  344 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  345 */         localSQLException2.fillInStackTrace();
+/*  346 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  349 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  352 */       return this.returnAccessors[(paramInt - 1)].getShort(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public int getInt(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  361 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  365 */       if (this.closed)
+/*      */       {
+/*  367 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  368 */         localSQLException1.fillInStackTrace();
+/*  369 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  372 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  374 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  375 */         localSQLException1.fillInStackTrace();
+/*  376 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  379 */       int i = this.statement.currentRow;
+/*  380 */       if (i < 0)
+/*      */       {
+/*  382 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  383 */         localSQLException2.fillInStackTrace();
+/*  384 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  387 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  390 */       return this.returnAccessors[(paramInt - 1)].getInt(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public long getLong(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  398 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  402 */       if (this.closed)
+/*      */       {
+/*  404 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  405 */         localSQLException1.fillInStackTrace();
+/*  406 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  409 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  411 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  412 */         localSQLException1.fillInStackTrace();
+/*  413 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  416 */       int i = this.statement.currentRow;
+/*  417 */       if (i < 0)
+/*      */       {
+/*  419 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  420 */         localSQLException2.fillInStackTrace();
+/*  421 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  424 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  427 */       return this.returnAccessors[(paramInt - 1)].getLong(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public float getFloat(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  435 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  439 */       if (this.closed)
+/*      */       {
+/*  441 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  442 */         localSQLException1.fillInStackTrace();
+/*  443 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  446 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  448 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  449 */         localSQLException1.fillInStackTrace();
+/*  450 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  453 */       int i = this.statement.currentRow;
+/*  454 */       if (i < 0)
+/*      */       {
+/*  456 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  457 */         localSQLException2.fillInStackTrace();
+/*  458 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  461 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  464 */       return this.returnAccessors[(paramInt - 1)].getFloat(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public double getDouble(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  472 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  476 */       if (this.closed)
+/*      */       {
+/*  478 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  479 */         localSQLException1.fillInStackTrace();
+/*  480 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  483 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  485 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  486 */         localSQLException1.fillInStackTrace();
+/*  487 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  490 */       int i = this.statement.currentRow;
+/*  491 */       if (i < 0)
+/*      */       {
+/*  493 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  494 */         localSQLException2.fillInStackTrace();
+/*  495 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  498 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  501 */       return this.returnAccessors[(paramInt - 1)].getDouble(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public BigDecimal getBigDecimal(int paramInt1, int paramInt2)
+/*      */     throws SQLException
+/*      */   {
+/*  509 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  513 */       if (this.closed)
+/*      */       {
+/*  515 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  516 */         localSQLException1.fillInStackTrace();
+/*  517 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  520 */       if ((paramInt1 <= 0) || (paramInt1 > this.statement.numReturnParams))
+/*      */       {
+/*  522 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  523 */         localSQLException1.fillInStackTrace();
+/*  524 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  527 */       int i = this.statement.currentRow;
+/*  528 */       if (i < 0)
+/*      */       {
+/*  530 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  531 */         localSQLException2.fillInStackTrace();
+/*  532 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  535 */       this.statement.lastIndex = paramInt1;
+/*      */       
+/*      */ 
+/*  538 */       return this.returnAccessors[(paramInt1 - 1)].getBigDecimal(i, paramInt2);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public byte[] getBytes(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  546 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  550 */       if (this.closed)
+/*      */       {
+/*  552 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  553 */         localSQLException1.fillInStackTrace();
+/*  554 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  557 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  559 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  560 */         localSQLException1.fillInStackTrace();
+/*  561 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  564 */       int i = this.statement.currentRow;
+/*  565 */       if (i < 0)
+/*      */       {
+/*  567 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  568 */         localSQLException2.fillInStackTrace();
+/*  569 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  572 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  575 */       return this.returnAccessors[(paramInt - 1)].getBytes(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public Date getDate(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  583 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  587 */       if (this.closed)
+/*      */       {
+/*  589 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  590 */         localSQLException1.fillInStackTrace();
+/*  591 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  594 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  596 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  597 */         localSQLException1.fillInStackTrace();
+/*  598 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  601 */       int i = this.statement.currentRow;
+/*  602 */       if (i < 0)
+/*      */       {
+/*  604 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  605 */         localSQLException2.fillInStackTrace();
+/*  606 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  609 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  612 */       return this.returnAccessors[(paramInt - 1)].getDate(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public Time getTime(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  620 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  624 */       if (this.closed)
+/*      */       {
+/*  626 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  627 */         localSQLException1.fillInStackTrace();
+/*  628 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  631 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  633 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  634 */         localSQLException1.fillInStackTrace();
+/*  635 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  638 */       int i = this.statement.currentRow;
+/*  639 */       if (i < 0)
+/*      */       {
+/*  641 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  642 */         localSQLException2.fillInStackTrace();
+/*  643 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  646 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  649 */       return this.returnAccessors[(paramInt - 1)].getTime(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public Timestamp getTimestamp(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  657 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  661 */       if (this.closed)
+/*      */       {
+/*  663 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  664 */         localSQLException1.fillInStackTrace();
+/*  665 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  668 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  670 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  671 */         localSQLException1.fillInStackTrace();
+/*  672 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  675 */       int i = this.statement.currentRow;
+/*  676 */       if (i < 0)
+/*      */       {
+/*  678 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  679 */         localSQLException2.fillInStackTrace();
+/*  680 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  683 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  686 */       return this.returnAccessors[(paramInt - 1)].getTimestamp(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public InputStream getAsciiStream(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  694 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*      */ 
+/*  698 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/*  699 */       localSQLException.fillInStackTrace();
+/*  700 */       throw localSQLException;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public InputStream getUnicodeStream(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  710 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*      */ 
+/*  714 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/*  715 */       localSQLException.fillInStackTrace();
+/*  716 */       throw localSQLException;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public InputStream getBinaryStream(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  726 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*      */ 
+/*  730 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/*  731 */       localSQLException.fillInStackTrace();
+/*  732 */       throw localSQLException;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public Object getObject(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  742 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  746 */       if (this.closed)
+/*      */       {
+/*  748 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  749 */         localSQLException1.fillInStackTrace();
+/*  750 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  753 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  755 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  756 */         localSQLException1.fillInStackTrace();
+/*  757 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  760 */       int i = this.statement.currentRow;
+/*  761 */       if (i < 0)
+/*      */       {
+/*  763 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  764 */         localSQLException2.fillInStackTrace();
+/*  765 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  768 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  771 */       return this.returnAccessors[(paramInt - 1)].getObject(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public ResultSet getCursor(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  780 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*      */ 
+/*  784 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/*  785 */       localSQLException.fillInStackTrace();
+/*  786 */       throw localSQLException;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public Datum getOracleObject(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  797 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  801 */       if (this.closed)
+/*      */       {
+/*  803 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  804 */         localSQLException1.fillInStackTrace();
+/*  805 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  808 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  810 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  811 */         localSQLException1.fillInStackTrace();
+/*  812 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  815 */       int i = this.statement.currentRow;
+/*  816 */       if (i < 0)
+/*      */       {
+/*  818 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  819 */         localSQLException2.fillInStackTrace();
+/*  820 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  823 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  826 */       return this.returnAccessors[(paramInt - 1)].getOracleObject(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public oracle.sql.ROWID getROWID(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  835 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  839 */       if (this.closed)
+/*      */       {
+/*  841 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  842 */         localSQLException1.fillInStackTrace();
+/*  843 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  846 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  848 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  849 */         localSQLException1.fillInStackTrace();
+/*  850 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  853 */       int i = this.statement.currentRow;
+/*  854 */       if (i < 0)
+/*      */       {
+/*  856 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  857 */         localSQLException2.fillInStackTrace();
+/*  858 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  861 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  864 */       return this.returnAccessors[(paramInt - 1)].getROWID(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public NUMBER getNUMBER(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  873 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  877 */       if (this.closed)
+/*      */       {
+/*  879 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  880 */         localSQLException1.fillInStackTrace();
+/*  881 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  884 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  886 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  887 */         localSQLException1.fillInStackTrace();
+/*  888 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  891 */       int i = this.statement.currentRow;
+/*  892 */       if (i < 0)
+/*      */       {
+/*  894 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  895 */         localSQLException2.fillInStackTrace();
+/*  896 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  899 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  902 */       return this.returnAccessors[(paramInt - 1)].getNUMBER(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public DATE getDATE(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  911 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  915 */       if (this.closed)
+/*      */       {
+/*  917 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  918 */         localSQLException1.fillInStackTrace();
+/*  919 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  922 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  924 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  925 */         localSQLException1.fillInStackTrace();
+/*  926 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  929 */       int i = this.statement.currentRow;
+/*  930 */       if (i < 0)
+/*      */       {
+/*  932 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  933 */         localSQLException2.fillInStackTrace();
+/*  934 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  937 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  940 */       return this.returnAccessors[(paramInt - 1)].getDATE(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public oracle.sql.ARRAY getARRAY(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  949 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  953 */       if (this.closed)
+/*      */       {
+/*  955 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  956 */         localSQLException1.fillInStackTrace();
+/*  957 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  960 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/*  962 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/*  963 */         localSQLException1.fillInStackTrace();
+/*  964 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  967 */       int i = this.statement.currentRow;
+/*  968 */       if (i < 0)
+/*      */       {
+/*  970 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/*  971 */         localSQLException2.fillInStackTrace();
+/*  972 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/*  975 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/*  978 */       return this.returnAccessors[(paramInt - 1)].getARRAY(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public oracle.sql.STRUCT getSTRUCT(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*  987 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/*  991 */       if (this.closed)
+/*      */       {
+/*  993 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/*  994 */         localSQLException1.fillInStackTrace();
+/*  995 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/*  998 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/* 1000 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1001 */         localSQLException1.fillInStackTrace();
+/* 1002 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1005 */       int i = this.statement.currentRow;
+/* 1006 */       if (i < 0)
+/*      */       {
+/* 1008 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1009 */         localSQLException2.fillInStackTrace();
+/* 1010 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/* 1013 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/* 1016 */       return this.returnAccessors[(paramInt - 1)].getSTRUCT(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public OPAQUE getOPAQUE(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 1025 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*      */ 
+/* 1029 */       SQLException localSQLException = DatabaseError.createUnsupportedFeatureSqlException("getOPAQUE");
+/* 1030 */       localSQLException.fillInStackTrace();
+/* 1031 */       throw localSQLException;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public oracle.sql.REF getREF(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 1042 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/* 1046 */       if (this.closed)
+/*      */       {
+/* 1048 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1049 */         localSQLException1.fillInStackTrace();
+/* 1050 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1053 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/* 1055 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1056 */         localSQLException1.fillInStackTrace();
+/* 1057 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1060 */       int i = this.statement.currentRow;
+/* 1061 */       if (i < 0)
+/*      */       {
+/* 1063 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1064 */         localSQLException2.fillInStackTrace();
+/* 1065 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/* 1068 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/* 1071 */       return this.returnAccessors[(paramInt - 1)].getREF(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public oracle.sql.CHAR getCHAR(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 1080 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/* 1084 */       if (this.closed)
+/*      */       {
+/* 1086 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1087 */         localSQLException1.fillInStackTrace();
+/* 1088 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1091 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/* 1093 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1094 */         localSQLException1.fillInStackTrace();
+/* 1095 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1098 */       int i = this.statement.currentRow;
+/* 1099 */       if (i < 0)
+/*      */       {
+/* 1101 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1102 */         localSQLException2.fillInStackTrace();
+/* 1103 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/* 1106 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/* 1109 */       return this.returnAccessors[(paramInt - 1)].getCHAR(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public oracle.sql.RAW getRAW(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 1118 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/* 1122 */       if (this.closed)
+/*      */       {
+/* 1124 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1125 */         localSQLException1.fillInStackTrace();
+/* 1126 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1129 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/* 1131 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1132 */         localSQLException1.fillInStackTrace();
+/* 1133 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1136 */       int i = this.statement.currentRow;
+/* 1137 */       if (i < 0)
+/*      */       {
+/* 1139 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1140 */         localSQLException2.fillInStackTrace();
+/* 1141 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/* 1144 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/* 1147 */       return this.returnAccessors[(paramInt - 1)].getRAW(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public BLOB getBLOB(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 1156 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/* 1160 */       if (this.closed)
+/*      */       {
+/* 1162 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1163 */         localSQLException1.fillInStackTrace();
+/* 1164 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1167 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/* 1169 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1170 */         localSQLException1.fillInStackTrace();
+/* 1171 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1174 */       int i = this.statement.currentRow;
+/* 1175 */       if (i < 0)
+/*      */       {
+/* 1177 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1178 */         localSQLException2.fillInStackTrace();
+/* 1179 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/* 1182 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/* 1185 */       return this.returnAccessors[(paramInt - 1)].getBLOB(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public CLOB getCLOB(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 1194 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/* 1198 */       if (this.closed)
+/*      */       {
+/* 1200 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1201 */         localSQLException1.fillInStackTrace();
+/* 1202 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1205 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/* 1207 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1208 */         localSQLException1.fillInStackTrace();
+/* 1209 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1212 */       int i = this.statement.currentRow;
+/* 1213 */       if (i < 0)
+/*      */       {
+/* 1215 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1216 */         localSQLException2.fillInStackTrace();
+/* 1217 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/* 1220 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/* 1223 */       return this.returnAccessors[(paramInt - 1)].getCLOB(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public oracle.sql.BFILE getBFILE(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 1231 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/* 1235 */       if (this.closed)
+/*      */       {
+/* 1237 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1238 */         localSQLException1.fillInStackTrace();
+/* 1239 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1242 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/* 1244 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1245 */         localSQLException1.fillInStackTrace();
+/* 1246 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1249 */       int i = this.statement.currentRow;
+/* 1250 */       if (i < 0)
+/*      */       {
+/* 1252 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1253 */         localSQLException2.fillInStackTrace();
+/* 1254 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/* 1257 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/* 1260 */       return this.returnAccessors[(paramInt - 1)].getBFILE(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */   /* Error */
+/*      */   public oracle.sql.BFILE getBfile(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     // Byte code:
+/*      */     //   0: aload_0
+/*      */     //   1: getfield 2	oracle/jdbc/driver/OracleReturnResultSet:statement	Loracle/jdbc/driver/OracleStatement;
+/*      */     //   4: getfield 9	oracle/jdbc/driver/OracleStatement:connection	Loracle/jdbc/driver/PhysicalConnection;
+/*      */     //   7: dup
+/*      */     //   8: astore_2
+/*      */     //   9: monitorenter
+/*      */     //   10: aload_0
+/*      */     //   11: iload_1
+/*      */     //   12: invokevirtual 61	oracle/jdbc/driver/OracleReturnResultSet:getBFILE	(I)Loracle/sql/BFILE;
+/*      */     //   15: aload_2
+/*      */     //   16: monitorexit
+/*      */     //   17: areturn
+/*      */     //   18: astore_3
+/*      */     //   19: aload_2
+/*      */     //   20: monitorexit
+/*      */     //   21: aload_3
+/*      */     //   22: athrow
+/*      */     // Line number table:
+/*      */     //   Java source line #1268	-> byte code offset #0
+/*      */     //   Java source line #1271	-> byte code offset #10
+/*      */     //   Java source line #1273	-> byte code offset #18
+/*      */     // Local variable table:
+/*      */     //   start	length	slot	name	signature
+/*      */     //   0	23	0	this	OracleReturnResultSet
+/*      */     //   0	23	1	paramInt	int
+/*      */     //   8	12	2	Ljava/lang/Object;	Object
+/*      */     //   18	4	3	localObject1	Object
+/*      */     // Exception table:
+/*      */     //   from	to	target	type
+/*      */     //   10	17	18	finally
+/*      */     //   18	21	18	finally
+/*      */   }
+/*      */   
+/*      */   public oracle.sql.CustomDatum getCustomDatum(int paramInt, CustomDatumFactory paramCustomDatumFactory)
+/*      */     throws SQLException
+/*      */   {
+/* 1280 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*      */ 
+/* 1284 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/* 1285 */       localSQLException.fillInStackTrace();
+/* 1286 */       throw localSQLException;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public ORAData getORAData(int paramInt, ORADataFactory paramORADataFactory)
+/*      */     throws SQLException
+/*      */   {
+/* 1297 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/* 1301 */       if (this.closed)
+/*      */       {
+/* 1303 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1304 */         localSQLException1.fillInStackTrace();
+/* 1305 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1308 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/* 1310 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1311 */         localSQLException1.fillInStackTrace();
+/* 1312 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1315 */       int i = this.statement.currentRow;
+/* 1316 */       if (i < 0)
+/*      */       {
+/* 1318 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1319 */         localSQLException2.fillInStackTrace();
+/* 1320 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/* 1323 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/* 1326 */       return this.returnAccessors[(paramInt - 1)].getORAData(i, paramORADataFactory);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public Object getObject(int paramInt, OracleDataFactory paramOracleDataFactory)
+/*      */     throws SQLException
+/*      */   {
+/* 1335 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/* 1339 */       if (this.closed)
+/*      */       {
+/* 1341 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1342 */         localSQLException1.fillInStackTrace();
+/* 1343 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1346 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/* 1348 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1349 */         localSQLException1.fillInStackTrace();
+/* 1350 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1353 */       int i = this.statement.currentRow;
+/* 1354 */       if (i < 0)
+/*      */       {
+/* 1356 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1357 */         localSQLException2.fillInStackTrace();
+/* 1358 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/* 1361 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/* 1364 */       return this.returnAccessors[(paramInt - 1)].getObject(i, paramOracleDataFactory);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public Object getObject(int paramInt, Map paramMap)
+/*      */     throws SQLException
+/*      */   {
+/* 1373 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/* 1377 */       if (this.closed)
+/*      */       {
+/* 1379 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1380 */         localSQLException1.fillInStackTrace();
+/* 1381 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1384 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/* 1386 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1387 */         localSQLException1.fillInStackTrace();
+/* 1388 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1391 */       int i = this.statement.currentRow;
+/* 1392 */       if (i < 0)
+/*      */       {
+/* 1394 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1395 */         localSQLException2.fillInStackTrace();
+/* 1396 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/* 1399 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/* 1402 */       return this.returnAccessors[(paramInt - 1)].getObject(i, paramMap);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */   /* Error */
+/*      */   public java.sql.Ref getRef(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     // Byte code:
+/*      */     //   0: aload_0
+/*      */     //   1: getfield 2	oracle/jdbc/driver/OracleReturnResultSet:statement	Loracle/jdbc/driver/OracleStatement;
+/*      */     //   4: getfield 9	oracle/jdbc/driver/OracleStatement:connection	Loracle/jdbc/driver/PhysicalConnection;
+/*      */     //   7: dup
+/*      */     //   8: astore_2
+/*      */     //   9: monitorenter
+/*      */     //   10: aload_0
+/*      */     //   11: iload_1
+/*      */     //   12: invokevirtual 65	oracle/jdbc/driver/OracleReturnResultSet:getREF	(I)Loracle/sql/REF;
+/*      */     //   15: aload_2
+/*      */     //   16: monitorexit
+/*      */     //   17: areturn
+/*      */     //   18: astore_3
+/*      */     //   19: aload_2
+/*      */     //   20: monitorexit
+/*      */     //   21: aload_3
+/*      */     //   22: athrow
+/*      */     // Line number table:
+/*      */     //   Java source line #1411	-> byte code offset #0
+/*      */     //   Java source line #1414	-> byte code offset #10
+/*      */     //   Java source line #1416	-> byte code offset #18
+/*      */     // Local variable table:
+/*      */     //   start	length	slot	name	signature
+/*      */     //   0	23	0	this	OracleReturnResultSet
+/*      */     //   0	23	1	paramInt	int
+/*      */     //   8	12	2	Ljava/lang/Object;	Object
+/*      */     //   18	4	3	localObject1	Object
+/*      */     // Exception table:
+/*      */     //   from	to	target	type
+/*      */     //   10	17	18	finally
+/*      */     //   18	21	18	finally
+/*      */   }
+/*      */   
+/*      */   /* Error */
+/*      */   public java.sql.Blob getBlob(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     // Byte code:
+/*      */     //   0: aload_0
+/*      */     //   1: getfield 2	oracle/jdbc/driver/OracleReturnResultSet:statement	Loracle/jdbc/driver/OracleStatement;
+/*      */     //   4: getfield 9	oracle/jdbc/driver/OracleStatement:connection	Loracle/jdbc/driver/PhysicalConnection;
+/*      */     //   7: dup
+/*      */     //   8: astore_2
+/*      */     //   9: monitorenter
+/*      */     //   10: aload_0
+/*      */     //   11: iload_1
+/*      */     //   12: invokevirtual 66	oracle/jdbc/driver/OracleReturnResultSet:getBLOB	(I)Loracle/sql/BLOB;
+/*      */     //   15: aload_2
+/*      */     //   16: monitorexit
+/*      */     //   17: areturn
+/*      */     //   18: astore_3
+/*      */     //   19: aload_2
+/*      */     //   20: monitorexit
+/*      */     //   21: aload_3
+/*      */     //   22: athrow
+/*      */     // Line number table:
+/*      */     //   Java source line #1423	-> byte code offset #0
+/*      */     //   Java source line #1426	-> byte code offset #10
+/*      */     //   Java source line #1428	-> byte code offset #18
+/*      */     // Local variable table:
+/*      */     //   start	length	slot	name	signature
+/*      */     //   0	23	0	this	OracleReturnResultSet
+/*      */     //   0	23	1	paramInt	int
+/*      */     //   8	12	2	Ljava/lang/Object;	Object
+/*      */     //   18	4	3	localObject1	Object
+/*      */     // Exception table:
+/*      */     //   from	to	target	type
+/*      */     //   10	17	18	finally
+/*      */     //   18	21	18	finally
+/*      */   }
+/*      */   
+/*      */   /* Error */
+/*      */   public java.sql.Clob getClob(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     // Byte code:
+/*      */     //   0: aload_0
+/*      */     //   1: getfield 2	oracle/jdbc/driver/OracleReturnResultSet:statement	Loracle/jdbc/driver/OracleStatement;
+/*      */     //   4: getfield 9	oracle/jdbc/driver/OracleStatement:connection	Loracle/jdbc/driver/PhysicalConnection;
+/*      */     //   7: dup
+/*      */     //   8: astore_2
+/*      */     //   9: monitorenter
+/*      */     //   10: aload_0
+/*      */     //   11: iload_1
+/*      */     //   12: invokevirtual 67	oracle/jdbc/driver/OracleReturnResultSet:getCLOB	(I)Loracle/sql/CLOB;
+/*      */     //   15: aload_2
+/*      */     //   16: monitorexit
+/*      */     //   17: areturn
+/*      */     //   18: astore_3
+/*      */     //   19: aload_2
+/*      */     //   20: monitorexit
+/*      */     //   21: aload_3
+/*      */     //   22: athrow
+/*      */     // Line number table:
+/*      */     //   Java source line #1435	-> byte code offset #0
+/*      */     //   Java source line #1438	-> byte code offset #10
+/*      */     //   Java source line #1440	-> byte code offset #18
+/*      */     // Local variable table:
+/*      */     //   start	length	slot	name	signature
+/*      */     //   0	23	0	this	OracleReturnResultSet
+/*      */     //   0	23	1	paramInt	int
+/*      */     //   8	12	2	Ljava/lang/Object;	Object
+/*      */     //   18	4	3	localObject1	Object
+/*      */     // Exception table:
+/*      */     //   from	to	target	type
+/*      */     //   10	17	18	finally
+/*      */     //   18	21	18	finally
+/*      */   }
+/*      */   
+/*      */   public Array getArray(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 1447 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*      */ 
+/* 1451 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/* 1452 */       localSQLException.fillInStackTrace();
+/* 1453 */       throw localSQLException;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public Reader getCharacterStream(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 1464 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*      */ 
+/* 1468 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/* 1469 */       localSQLException.fillInStackTrace();
+/* 1470 */       throw localSQLException;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public BigDecimal getBigDecimal(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     SQLException localSQLException1;
+/*      */     
+/*      */ 
+/* 1483 */     if (this.closed)
+/*      */     {
+/* 1485 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1486 */       localSQLException1.fillInStackTrace();
+/* 1487 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1490 */     if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */     {
+/* 1492 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1493 */       localSQLException1.fillInStackTrace();
+/* 1494 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1497 */     int i = this.statement.currentRow;
+/* 1498 */     if (i < 0)
+/*      */     {
+/* 1500 */       SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1501 */       localSQLException2.fillInStackTrace();
+/* 1502 */       throw localSQLException2;
+/*      */     }
+/*      */     
+/* 1505 */     this.statement.lastIndex = paramInt;
+/*      */     
+/*      */ 
+/* 1508 */     return this.returnAccessors[(paramInt - 1)].getBigDecimal(i);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public Date getDate(int paramInt, Calendar paramCalendar)
+/*      */     throws SQLException
+/*      */   {
+/*      */     SQLException localSQLException1;
+/*      */     
+/*      */ 
+/* 1519 */     if (this.closed)
+/*      */     {
+/* 1521 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1522 */       localSQLException1.fillInStackTrace();
+/* 1523 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1526 */     if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */     {
+/* 1528 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1529 */       localSQLException1.fillInStackTrace();
+/* 1530 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1533 */     int i = this.statement.currentRow;
+/* 1534 */     if (i < 0)
+/*      */     {
+/* 1536 */       SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1537 */       localSQLException2.fillInStackTrace();
+/* 1538 */       throw localSQLException2;
+/*      */     }
+/*      */     
+/* 1541 */     this.statement.lastIndex = paramInt;
+/*      */     
+/*      */ 
+/* 1544 */     return this.returnAccessors[(paramInt - 1)].getDate(i, paramCalendar);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public Time getTime(int paramInt, Calendar paramCalendar)
+/*      */     throws SQLException
+/*      */   {
+/*      */     SQLException localSQLException1;
+/*      */     
+/*      */ 
+/* 1555 */     if (this.closed)
+/*      */     {
+/* 1557 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1558 */       localSQLException1.fillInStackTrace();
+/* 1559 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1562 */     if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */     {
+/* 1564 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1565 */       localSQLException1.fillInStackTrace();
+/* 1566 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1569 */     int i = this.statement.currentRow;
+/* 1570 */     if (i < 0)
+/*      */     {
+/* 1572 */       SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1573 */       localSQLException2.fillInStackTrace();
+/* 1574 */       throw localSQLException2;
+/*      */     }
+/*      */     
+/* 1577 */     this.statement.lastIndex = paramInt;
+/*      */     
+/*      */ 
+/* 1580 */     return this.returnAccessors[(paramInt - 1)].getTime(i, paramCalendar);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public Timestamp getTimestamp(int paramInt, Calendar paramCalendar)
+/*      */     throws SQLException
+/*      */   {
+/*      */     SQLException localSQLException1;
+/*      */     
+/*      */ 
+/* 1591 */     if (this.closed)
+/*      */     {
+/* 1593 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1594 */       localSQLException1.fillInStackTrace();
+/* 1595 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1598 */     if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */     {
+/* 1600 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1601 */       localSQLException1.fillInStackTrace();
+/* 1602 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1605 */     int i = this.statement.currentRow;
+/* 1606 */     if (i < 0)
+/*      */     {
+/* 1608 */       SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1609 */       localSQLException2.fillInStackTrace();
+/* 1610 */       throw localSQLException2;
+/*      */     }
+/*      */     
+/* 1613 */     this.statement.lastIndex = paramInt;
+/*      */     
+/*      */ 
+/* 1616 */     return this.returnAccessors[(paramInt - 1)].getTimestamp(i, paramCalendar);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public oracle.sql.INTERVALYM getINTERVALYM(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     SQLException localSQLException1;
+/*      */     
+/*      */ 
+/* 1627 */     if (this.closed)
+/*      */     {
+/* 1629 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1630 */       localSQLException1.fillInStackTrace();
+/* 1631 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1634 */     if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */     {
+/* 1636 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1637 */       localSQLException1.fillInStackTrace();
+/* 1638 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1641 */     int i = this.statement.currentRow;
+/* 1642 */     if (i < 0)
+/*      */     {
+/* 1644 */       SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1645 */       localSQLException2.fillInStackTrace();
+/* 1646 */       throw localSQLException2;
+/*      */     }
+/*      */     
+/* 1649 */     this.statement.lastIndex = paramInt;
+/*      */     
+/*      */ 
+/* 1652 */     return this.returnAccessors[(paramInt - 1)].getINTERVALYM(i);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public oracle.sql.INTERVALDS getINTERVALDS(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     SQLException localSQLException1;
+/*      */     
+/* 1662 */     if (this.closed)
+/*      */     {
+/* 1664 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1665 */       localSQLException1.fillInStackTrace();
+/* 1666 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1669 */     if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */     {
+/* 1671 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1672 */       localSQLException1.fillInStackTrace();
+/* 1673 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1676 */     int i = this.statement.currentRow;
+/* 1677 */     if (i < 0)
+/*      */     {
+/* 1679 */       SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1680 */       localSQLException2.fillInStackTrace();
+/* 1681 */       throw localSQLException2;
+/*      */     }
+/*      */     
+/* 1684 */     this.statement.lastIndex = paramInt;
+/*      */     
+/*      */ 
+/* 1687 */     return this.returnAccessors[(paramInt - 1)].getINTERVALDS(i);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public oracle.sql.TIMESTAMP getTIMESTAMP(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     SQLException localSQLException1;
+/*      */     
+/*      */ 
+/* 1698 */     if (this.closed)
+/*      */     {
+/* 1700 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1701 */       localSQLException1.fillInStackTrace();
+/* 1702 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1705 */     if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */     {
+/* 1707 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1708 */       localSQLException1.fillInStackTrace();
+/* 1709 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1712 */     int i = this.statement.currentRow;
+/* 1713 */     if (i < 0)
+/*      */     {
+/* 1715 */       SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1716 */       localSQLException2.fillInStackTrace();
+/* 1717 */       throw localSQLException2;
+/*      */     }
+/*      */     
+/* 1720 */     this.statement.lastIndex = paramInt;
+/*      */     
+/*      */ 
+/* 1723 */     return this.returnAccessors[(paramInt - 1)].getTIMESTAMP(i);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public oracle.sql.TIMESTAMPTZ getTIMESTAMPTZ(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     SQLException localSQLException1;
+/*      */     
+/* 1733 */     if (this.closed)
+/*      */     {
+/* 1735 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1736 */       localSQLException1.fillInStackTrace();
+/* 1737 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1740 */     if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */     {
+/* 1742 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1743 */       localSQLException1.fillInStackTrace();
+/* 1744 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1747 */     int i = this.statement.currentRow;
+/* 1748 */     if (i < 0)
+/*      */     {
+/* 1750 */       SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1751 */       localSQLException2.fillInStackTrace();
+/* 1752 */       throw localSQLException2;
+/*      */     }
+/*      */     
+/* 1755 */     this.statement.lastIndex = paramInt;
+/*      */     
+/*      */ 
+/* 1758 */     return this.returnAccessors[(paramInt - 1)].getTIMESTAMPTZ(i);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public TIMESTAMPLTZ getTIMESTAMPLTZ(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     SQLException localSQLException1;
+/*      */     
+/* 1768 */     if (this.closed)
+/*      */     {
+/* 1770 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1771 */       localSQLException1.fillInStackTrace();
+/* 1772 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1775 */     if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */     {
+/* 1777 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1778 */       localSQLException1.fillInStackTrace();
+/* 1779 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1782 */     int i = this.statement.currentRow;
+/* 1783 */     if (i < 0)
+/*      */     {
+/* 1785 */       SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1786 */       localSQLException2.fillInStackTrace();
+/* 1787 */       throw localSQLException2;
+/*      */     }
+/*      */     
+/* 1790 */     this.statement.lastIndex = paramInt;
+/*      */     
+/*      */ 
+/* 1793 */     return this.returnAccessors[(paramInt - 1)].getTIMESTAMPLTZ(i);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public java.net.URL getURL(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 1801 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */       SQLException localSQLException1;
+/*      */       
+/* 1805 */       if (this.closed)
+/*      */       {
+/* 1807 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1808 */         localSQLException1.fillInStackTrace();
+/* 1809 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1812 */       if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */       {
+/* 1814 */         localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1815 */         localSQLException1.fillInStackTrace();
+/* 1816 */         throw localSQLException1;
+/*      */       }
+/*      */       
+/* 1819 */       int i = this.statement.currentRow;
+/* 1820 */       if (i < 0)
+/*      */       {
+/* 1822 */         SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1823 */         localSQLException2.fillInStackTrace();
+/* 1824 */         throw localSQLException2;
+/*      */       }
+/*      */       
+/* 1827 */       this.statement.lastIndex = paramInt;
+/*      */       
+/*      */ 
+/* 1830 */       return this.returnAccessors[(paramInt - 1)].getURL(i);
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public boolean isBeforeFirst()
+/*      */     throws SQLException
+/*      */   {
+/* 1838 */     if (this.closed)
+/*      */     {
+/* 1840 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1841 */       localSQLException.fillInStackTrace();
+/* 1842 */       throw localSQLException;
+/*      */     }
+/*      */     
+/*      */ 
+/* 1846 */     return (!isEmptyResultSet()) && (this.statement.currentRow == -1) && (!this.closed);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public boolean isAfterLast()
+/*      */     throws SQLException
+/*      */   {
+/* 1853 */     if (this.closed)
+/*      */     {
+/* 1855 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1856 */       localSQLException.fillInStackTrace();
+/* 1857 */       throw localSQLException;
+/*      */     }
+/*      */     
+/*      */ 
+/* 1861 */     return (!isEmptyResultSet()) && (this.closed);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public boolean isFirst()
+/*      */     throws SQLException
+/*      */   {
+/* 1869 */     return getRow() == 1;
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public boolean isLast()
+/*      */     throws SQLException
+/*      */   {
+/* 1876 */     if (this.closed)
+/*      */     {
+/* 1878 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1879 */       localSQLException.fillInStackTrace();
+/* 1880 */       throw localSQLException;
+/*      */     }
+/*      */     
+/* 1883 */     return getRow() == this.statement.rowsDmlReturned;
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public int getRow()
+/*      */     throws SQLException
+/*      */   {
+/* 1890 */     if (this.closed)
+/*      */     {
+/* 1892 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1893 */       localSQLException.fillInStackTrace();
+/* 1894 */       throw localSQLException;
+/*      */     }
+/*      */     
+/* 1897 */     return this.statement.totalRowsVisited;
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public int findColumn(String paramString)
+/*      */     throws SQLException
+/*      */   {
+/* 1904 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/*      */ 
+/* 1908 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/* 1909 */       localSQLException.fillInStackTrace();
+/* 1910 */       throw localSQLException;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public void setFetchSize(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 1922 */     SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/* 1923 */     localSQLException.fillInStackTrace();
+/* 1924 */     throw localSQLException;
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public int getFetchSize()
+/*      */     throws SQLException
+/*      */   {
+/* 1935 */     SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/* 1936 */     localSQLException.fillInStackTrace();
+/* 1937 */     throw localSQLException;
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   boolean isEmptyResultSet()
+/*      */   {
+/* 1946 */     return this.statement.rowsDmlReturned == 0;
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public NClob getNClob(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     SQLException localSQLException1;
+/*      */     
+/*      */ 
+/*      */ 
+/* 1959 */     if (this.closed)
+/*      */     {
+/* 1961 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1962 */       localSQLException1.fillInStackTrace();
+/* 1963 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1966 */     if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */     {
+/* 1968 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 1969 */       localSQLException1.fillInStackTrace();
+/* 1970 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 1973 */     int i = this.statement.currentRow;
+/* 1974 */     if (i < 0)
+/*      */     {
+/* 1976 */       SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 1977 */       localSQLException2.fillInStackTrace();
+/* 1978 */       throw localSQLException2;
+/*      */     }
+/*      */     
+/* 1981 */     this.statement.lastIndex = paramInt;
+/*      */     
+/*      */ 
+/* 1984 */     return (NClob)this.returnAccessors[(paramInt - 1)].getCLOB(i);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */   public String getNString(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/*      */     SQLException localSQLException1;
+/*      */     
+/* 1993 */     if (this.closed)
+/*      */     {
+/* 1995 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 11);
+/* 1996 */       localSQLException1.fillInStackTrace();
+/* 1997 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 2000 */     if ((paramInt <= 0) || (paramInt > this.statement.numReturnParams))
+/*      */     {
+/* 2002 */       localSQLException1 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 3);
+/* 2003 */       localSQLException1.fillInStackTrace();
+/* 2004 */       throw localSQLException1;
+/*      */     }
+/*      */     
+/* 2007 */     int i = this.statement.currentRow;
+/* 2008 */     if (i < 0)
+/*      */     {
+/* 2010 */       SQLException localSQLException2 = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 14);
+/* 2011 */       localSQLException2.fillInStackTrace();
+/* 2012 */       throw localSQLException2;
+/*      */     }
+/*      */     
+/* 2015 */     this.statement.lastIndex = paramInt;
+/*      */     
+/*      */ 
+/* 2018 */     return this.returnAccessors[(paramInt - 1)].getString(i);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public Reader getNCharacterStream(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 2026 */     SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23);
+/* 2027 */     localSQLException.fillInStackTrace();
+/* 2028 */     throw localSQLException;
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public java.sql.RowId getRowId(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 2036 */     return getROWID(paramInt);
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */   public SQLXML getSQLXML(int paramInt)
+/*      */     throws SQLException
+/*      */   {
+/* 2044 */     SQLException localSQLException = DatabaseError.createUnsupportedFeatureSqlException("getSQLXML");
+/* 2045 */     localSQLException.fillInStackTrace();
+/* 2046 */     throw localSQLException;
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   public String getCursorName()
+/*      */     throws SQLException
+/*      */   {
+/* 2055 */     synchronized (this.statement.connection)
+/*      */     {
+/*      */ 
+/* 2058 */       SQLException localSQLException = DatabaseError.createSqlException(getConnectionDuringExceptionHandling(), 23, "getCursorName");
+/* 2059 */       localSQLException.fillInStackTrace();
+/* 2060 */       throw localSQLException;
+/*      */     }
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */   protected OracleConnection getConnectionDuringExceptionHandling()
+/*      */   {
+/* 2077 */     return this.statement.getConnectionDuringExceptionHandling();
+/*      */   }
+/*      */   
+/*      */ 
+/*      */ 
+/*      */ 
+/*      */ 
+/* 2084 */   private static final String _Copyright_2007_Oracle_All_Rights_Reserved_ = null;
+/*      */   public static final boolean TRACE = false;
+/*      */ }
+/* Location:              /home/caixj/下载/ojdbc6.jar!/oracle/jdbc/driver/OracleReturnResultSet.class
+ * Java compiler version: 6 (50.0)
+ * JD-Core Version:       0.7.1
+ */
